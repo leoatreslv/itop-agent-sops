@@ -1,0 +1,53 @@
+---
+- name: Execute Dynatrace Investigation Steps
+  hosts: localhost
+  connection: local
+  tasks:
+    - name: Step 1 - Fetch problem details
+      shell: |
+        curl -X POST 'https://lwo82920.apps.dynatrace.com/platform/storage/query/v1/query:execute' \
+        -H 'Authorization: Bearer {{ dt_token }}' \
+        -H 'Content-Type: application/json' \
+        -d '{"query": "fetch dt.davis.problems, from:now()-30d | filter display_id == \"P-2605309\" | limit 1"}'
+      when: step == '1'
+      register: step1_res
+
+    - name: Step 2 - Identify HTTP error codes
+      shell: |
+        curl -X POST 'https://lwo82920.apps.dynatrace.com/platform/storage/query/v1/query:execute' \
+        -H 'Authorization: Bearer {{ dt_token }}' \
+        -H 'Content-Type: application/json' \
+        -d '{"query": "fetch spans, from:\"2026-05-31T01:12:00Z\", to:\"2026-05-31T01:57:00Z\" | filter dt.entity.application == \"APPLICATION-EA7C4B59F27D43EB\" | summarize count(), by:{http.status_code}"}'
+      when: step == '2'
+      register: step2_res
+
+    - name: Step 3 - Poll span query status
+      shell: |
+        curl -X GET 'https://lwo82920.apps.dynatrace.com/platform/storage/query/v1/query:poll?request-token={{ request_token }}' \
+        -H 'Authorization: Bearer {{ dt_token }}'
+      when: step == '3'
+
+    - name: Step 4 - Inspect application logs
+      shell: |
+        curl -X POST 'https://lwo82920.apps.dynatrace.com/platform/storage/query/v1/query:execute' \
+        -H 'Authorization: Bearer {{ dt_token }}' \
+        -H 'Content-Type: application/json' \
+        -d '{"query": "fetch logs, from:\"2026-05-31T01:12:00Z\", to:\"2026-05-31T01:57:00Z\" | filter matchesValue(affected_entity_ids, \"APPLICATION-EA7C4B59F27D43EB\") | sort timestamp desc | limit 100"}'
+      when: step == '4'
+      register: step4_res
+
+    - name: Step 5 - Poll log query status
+      shell: |
+        curl -X GET 'https://lwo82920.apps.dynatrace.com/platform/storage/query/v1/query:poll?request-token={{ request_token }}' \
+        -H 'Authorization: Bearer {{ dt_token }}'
+      when: step == '5'
+
+    - name: Step 6 - Manual Correlation Placeholder
+      debug:
+        msg: "Operator must manually correlate timestamps with deployments/infra changes."
+      when: step == '6'
+
+    - name: Step 7 - Analysis Placeholder
+      debug:
+        msg: "Operator is performing final analysis of findings."
+      when: step == '7'
