@@ -1,0 +1,177 @@
+name: investigate-request-error-rate-increase
+description: Investigate Request error rate increase for My web application (P-2605309)
+version: 1.0.0
+applications:
+- name: my-web-application
+  label: My web application
+environments:
+- production
+datasources:
+  dt_token:
+    type: vault
+    config:
+      path: secret/dynatrace
+      key: api_token
+governance:
+  require_approval_for_risk_level: medium
+  allowed_roles:
+  - SRE-OnCall
+  require_input_validation: true
+  retrospective_enabled: true
+steps:
+- id: 1
+  name: Fetch problem details
+  risk_level: low
+  description: Fetch problem details from Dynatrace to verify the problem status and metadata
+  command:
+    type: ansible
+    template: ansible-playbook playbook.yml -e 'step="1" dt_token="{{dt_token}}"'
+  arguments:
+    dt_token:
+      source: datasource
+      datasource_ref: dt_token.api_token
+  on_result:
+    cases:
+    - match:
+        exit_code: 0
+      action:
+        type: next_step
+    default:
+      action:
+        type: error
+        message: Failed to fetch problem details
+  timeout_seconds: 60
+- id: 2
+  name: Identify HTTP error codes
+  risk_level: low
+  description: Identify HTTP error codes contributing to the error rate by querying spans
+  command:
+    type: ansible
+    template: ansible-playbook playbook.yml -e 'step="2" dt_token="{{dt_token}}"'
+  arguments:
+    dt_token:
+      source: datasource
+      datasource_ref: dt_token.api_token
+  on_result:
+    cases:
+    - match:
+        exit_code: 0
+      action:
+        type: next_step
+    default:
+      action:
+        type: error
+        message: Failed to query spans
+  timeout_seconds: 60
+- id: 3
+  name: Poll span query status
+  risk_level: low
+  description: Poll the query execution status for the error code investigation (replace <token> with requestToken from step
+    2)
+  command:
+    type: ansible
+    template: ansible-playbook playbook.yml -e 'step="3" dt_token="{{dt_token}}" request_token="{{request_token}}"'
+  arguments:
+    dt_token:
+      source: datasource
+      datasource_ref: dt_token.api_token
+    request_token:
+      source: context
+      context_ref: steps.2.request_token
+  on_result:
+    cases:
+    - match:
+        exit_code: 0
+      action:
+        type: next_step
+    default:
+      action:
+        type: error
+        message: Failed to poll span query
+  timeout_seconds: 300
+- id: 4
+  name: Inspect application logs
+  risk_level: low
+  description: Inspect logs for the application during the incident window to find specific error messages
+  command:
+    type: ansible
+    template: ansible-playbook playbook.yml -e 'step="4" dt_token="{{dt_token}}"'
+  arguments:
+    dt_token:
+      source: datasource
+      datasource_ref: dt_token.api_token
+  on_result:
+    cases:
+    - match:
+        exit_code: 0
+      action:
+        type: next_step
+    default:
+      action:
+        type: error
+        message: Failed to execute log query
+  timeout_seconds: 60
+- id: 5
+  name: Poll log query status
+  risk_level: low
+  description: Poll the query execution status for the log investigation (replace <token> with requestToken from step 4)
+  command:
+    type: ansible
+    template: ansible-playbook playbook.yml -e 'step="5" dt_token="{{dt_token}}" request_token="{{request_token}}"'
+  arguments:
+    dt_token:
+      source: datasource
+      datasource_ref: dt_token.api_token
+    request_token:
+      source: context
+      context_ref: steps.4.request_token
+  on_result:
+    cases:
+    - match:
+        exit_code: 0
+      action:
+        type: next_step
+    default:
+      action:
+        type: error
+        message: Failed to poll log query
+  timeout_seconds: 300
+- id: 6
+  name: Correlate deployments
+  risk_level: medium
+  require_approval: true
+  description: Correlate error timestamps with any deployment or infrastructure change events (Manual Step)
+  command:
+    type: ansible
+    template: ansible-playbook playbook.yml -e 'step="6"'
+  arguments: {}
+  on_result:
+    cases:
+    - match:
+        type: script
+        script: 'true'
+      action:
+        type: next_step
+    default:
+      action:
+        type: next_step
+  timeout_seconds: 3600
+- id: 7
+  name: Analyze findings
+  risk_level: low
+  description: 'Analyze findings: Check if errors were caused by backend service failures, database timeouts, or recent code
+    changes'
+  command:
+    type: ansible
+    template: ansible-playbook playbook.yml -e 'step="7"'
+  arguments: {}
+  on_result:
+    cases:
+    - match:
+        exit_code: 0
+      action:
+        type: finish
+    default:
+      action:
+        type: finish
+  timeout_seconds: 600
